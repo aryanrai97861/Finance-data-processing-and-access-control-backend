@@ -126,11 +126,21 @@ backend/
    # Edit .env with your database URL and JWT secret
    ```
 
-4. **Set up database & seed data** (one command)
+4. **Set up database & seed data**
    ```bash
    npm run setup
    ```
-   This generates the Prisma client, pushes the schema to the database, and seeds sample data.
+   This single command handles:
+   - `prisma generate` — Generate Prisma client
+   - `prisma db push` — Push schema to database
+   - `prisma seed` — Seed sample users and records
+   
+   Or run individually if preferred:
+   ```bash
+   npm run prisma:generate
+   npm run prisma:push
+   npm run prisma:seed
+   ```
 
 5. **Start the development server**
    ```bash
