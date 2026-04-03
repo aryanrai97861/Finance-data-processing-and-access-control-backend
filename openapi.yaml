@@ -1,0 +1,790 @@
+openapi: 3.0.0
+info:
+  title: Finance Dashboard Backend API
+  description: |
+    A robust backend API for a finance dashboard system with JWT authentication, 
+    role-based access control (RBAC), and financial records management.
+  version: 1.0.0
+  contact:
+    name: Finance Dashboard Team
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:3000/api
+    description: Local Development
+  - url: https://your-api.onrender.com/api
+    description: Production (Render)
+
+tags:
+  - name: Health
+    description: Server status check
+  - name: Authentication
+    description: User registration, login, and profile
+  - name: Users
+    description: User management (ADMIN only)
+  - name: Records
+    description: Financial records CRUD operations
+  - name: Dashboard
+    description: Analytics and dashboard data
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          description: User unique identifier (CUID)
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        role:
+          type: string
+          enum: [VIEWER, ANALYST, ADMIN]
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    FinancialRecord:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Record unique identifier (CUID)
+        amount:
+          type: number
+          format: double
+        type:
+          type: string
+          enum: [INCOME, EXPENSE]
+        category:
+          type: string
+        description:
+          type: string
+          nullable: true
+        date:
+          type: string
+          format: date-time
+        userId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ApiResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        data:
+          type: object
+
+    ApiError:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        message:
+          type: string
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              message:
+                type: string
+
+paths:
+  /health:
+    get:
+      summary: Health Check
+      description: Returns server status. No authentication required.
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+              example:
+                success: true
+                message: "Server is running"
+
+  /auth/register:
+    post:
+      summary: Register new user
+      description: Create a new user account. New users are assigned VIEWER role by default.
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+                - name
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  minLength: 6
+                name:
+                  type: string
+            example:
+              email: "user@example.com"
+              password: "password123"
+              name: "John Doe"
+      responses:
+        '201':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      user:
+                        $ref: '#/components/schemas/User'
+                      token:
+                        type: string
+              example:
+                success: true
+                message: "User registered successfully"
+                data:
+                  user:
+                    id: "clxy123abc"
+                    email: "user@example.com"
+                    name: "John Doe"
+                    role: "VIEWER"
+                    status: "ACTIVE"
+                  token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        '409':
+          description: Email already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  /auth/login:
+    post:
+      summary: Login user
+      description: Authenticate user and return JWT token
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+            example:
+              email: "admin@finance.com"
+              password: "admin123"
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      user:
+                        $ref: '#/components/schemas/User'
+                      token:
+                        type: string
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  /auth/me:
+    get:
+      summary: Get current user profile
+      description: Returns authenticated user's profile information
+      tags:
+        - Authentication
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: User profile retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/User'
+        '401':
+          description: Missing or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  /users:
+    get:
+      summary: List all users (paginated)
+      description: List users with pagination and optional search. Requires ADMIN role.
+      tags:
+        - Users
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+        - name: search
+          in: query
+          description: Search by email or name (case-insensitive)
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Users list retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/User'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: Insufficient role (requires ADMIN)
+
+  /users/{userId}:
+    get:
+      summary: Get user by ID
+      description: Retrieve specific user details. Requires ADMIN role.
+      tags:
+        - Users
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: User retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/User'
+        '404':
+          description: User not found
+
+    patch:
+      summary: Update user
+      description: Update user details (name, role, status). Requires ADMIN role. Admins cannot modify their own role/status.
+      tags:
+        - Users
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                role:
+                  type: string
+                  enum: [VIEWER, ANALYST, ADMIN]
+                status:
+                  type: string
+                  enum: [ACTIVE, INACTIVE]
+            example:
+              role: "ANALYST"
+              status: "ACTIVE"
+      responses:
+        '200':
+          description: User updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/User'
+        '400':
+          description: Cannot modify own role/status as admin
+
+    delete:
+      summary: Delete user
+      description: Delete a user by ID. Requires ADMIN role. Admins cannot delete themselves.
+      tags:
+        - Users
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: User deleted successfully
+        '400':
+          description: Cannot delete own admin account
+
+  /records:
+    post:
+      summary: Create financial record
+      description: Create a new financial record. Requires ADMIN role.
+      tags:
+        - Records
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - amount
+                - type
+                - category
+                - date
+              properties:
+                amount:
+                  type: number
+                  format: double
+                type:
+                  type: string
+                  enum: [INCOME, EXPENSE]
+                category:
+                  type: string
+                description:
+                  type: string
+                date:
+                  type: string
+                  format: date-time
+            example:
+              amount: 5000
+              type: "INCOME"
+              category: "Salary"
+              description: "Monthly salary"
+              date: "2026-04-01"
+      responses:
+        '201':
+          description: Record created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/FinancialRecord'
+        '403':
+          description: Insufficient role (requires ADMIN)
+
+    get:
+      summary: List financial records with filters
+      description: List records with optional filters. All authenticated users can view.
+      tags:
+        - Records
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [INCOME, EXPENSE]
+        - name: category
+          in: query
+          schema:
+            type: string
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: minAmount
+          in: query
+          schema:
+            type: number
+        - name: maxAmount
+          in: query
+          schema:
+            type: number
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [date, amount, category, type, createdAt]
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+      responses:
+        '200':
+          description: Records retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FinancialRecord'
+
+  /records/{recordId}:
+    get:
+      summary: Get record by ID
+      description: Retrieve a specific financial record
+      tags:
+        - Records
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: recordId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Record retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/FinancialRecord'
+        '404':
+          description: Record not found
+
+    patch:
+      summary: Update record
+      description: Update financial record. Requires ADMIN role.
+      tags:
+        - Records
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: recordId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                amount:
+                  type: number
+                category:
+                  type: string
+                description:
+                  type: string
+                date:
+                  type: string
+                  format: date-time
+            example:
+              amount: 5500
+              description: "Updated salary"
+      responses:
+        '200':
+          description: Record updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/FinancialRecord'
+
+    delete:
+      summary: Delete record (soft delete)
+      description: Soft delete a financial record (sets deletedAt timestamp). Requires ADMIN role.
+      tags:
+        - Records
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: recordId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Record deleted (soft delete)
+        '404':
+          description: Record not found
+
+  /dashboard/summary:
+    get:
+      summary: Dashboard summary
+      description: Get financial summary (total income, expenses, balance). Requires ANALYST or ADMIN role.
+      tags:
+        - Dashboard
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Summary retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      totalIncome:
+                        type: number
+                      totalExpenses:
+                        type: number
+                      netBalance:
+                        type: number
+                      totalRecords:
+                        type: integer
+                      incomeCount:
+                        type: integer
+                      expenseCount:
+                        type: integer
+              example:
+                success: true
+                data:
+                  totalIncome: 125000.50
+                  totalExpenses: 45000.75
+                  netBalance: 79999.75
+                  totalRecords: 96
+                  incomeCount: 40
+                  expenseCount: 56
+        '403':
+          description: Insufficient role (requires ANALYST or ADMIN)
+
+  /dashboard/category-totals:
+    get:
+      summary: Category-wise totals
+      description: Get financial totals grouped by category and type. Requires ANALYST or ADMIN role.
+      tags:
+        - Dashboard
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Category totals retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        category:
+                          type: string
+                        type:
+                          type: string
+                        total:
+                          type: number
+                        count:
+                          type: integer
+
+  /dashboard/trends:
+    get:
+      summary: Monthly trends
+      description: Get monthly income/expense trends for the last 12 months. Requires ANALYST or ADMIN role.
+      tags:
+        - Dashboard
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Trends retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        month:
+                          type: string
+                        income:
+                          type: number
+                        expenses:
+                          type: number
+                        net:
+                          type: number
+                        incomeCount:
+                          type: integer
+                        expenseCount:
+                          type: integer
+              example:
+                success: true
+                data:
+                  - month: "Apr 2025"
+                    income: 12000
+                    expenses: 5500
+                    net: 6500
+                    incomeCount: 4
+                    expenseCount: 7
+
+  /dashboard/recent:
+    get:
+      summary: Recent financial activity
+      description: Get recent financial records. All authenticated users can access.
+      tags:
+        - Dashboard
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: Recent activity retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FinancialRecord'
