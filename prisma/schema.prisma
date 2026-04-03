@@ -1,0 +1,61 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  VIEWER
+  ANALYST
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum RecordType {
+  INCOME
+  EXPENSE
+}
+
+model User {
+  id        String     @id @default(cuid())
+  email     String     @unique
+  password  String
+  name      String
+  role      Role       @default(VIEWER)
+  status    UserStatus @default(ACTIVE)
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+
+  records FinancialRecord[]
+
+  @@map("users")
+}
+
+model FinancialRecord {
+  id          String     @id @default(cuid())
+  amount      Float
+  type        RecordType
+  category    String
+  description String?
+  date        DateTime
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+  deletedAt   DateTime?  @map("deleted_at")
+
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([type])
+  @@index([category])
+  @@index([date])
+  @@index([deletedAt])
+  @@map("financial_records")
+}
