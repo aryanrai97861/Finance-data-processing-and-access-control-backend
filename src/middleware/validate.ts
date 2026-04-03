@@ -18,7 +18,14 @@ export function validate(schema: {
         req.body = schema.body.parse(req.body);
       }
       if (schema.query) {
-        req.query = schema.query.parse(req.query) as any;
+        const parsedQuery = schema.query.parse(req.query) as Record<string, unknown>;
+
+        // In Express 5, req.query can be getter-backed; mutate the existing object safely.
+        const queryTarget = req.query as Record<string, unknown>;
+        for (const key of Object.keys(queryTarget)) {
+          delete queryTarget[key];
+        }
+        Object.assign(queryTarget, parsedQuery);
       }
       if (schema.params) {
         req.params = schema.params.parse(req.params) as any;

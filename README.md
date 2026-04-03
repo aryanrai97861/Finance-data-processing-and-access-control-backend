@@ -6,19 +6,44 @@ A robust backend API for a finance dashboard system built with **Node.js**, **Ex
 
 ## Table of Contents
 
-- [Tech Stack](#tech-stack)
-- [Project Structure](#project-structure)
-- [Setup & Installation](#setup--installation)
-- [Environment Variables](#environment-variables)
-- [Database Schema](#database-schema)
-- [API Documentation](#api-documentation)
-  - [Authentication](#authentication)
-  - [User Management](#user-management)
-  - [Financial Records](#financial-records)
-  - [Dashboard Analytics](#dashboard-analytics)
-- [Role-Based Access Control](#role-based-access-control)
-- [Error Handling](#error-handling)
-- [Design Decisions & Tradeoffs](#design-decisions--tradeoffs)
+- [Finance Dashboard Backend](#finance-dashboard-backend)
+  - [Table of Contents](#table-of-contents)
+  - [Tech Stack](#tech-stack)
+  - [Project Structure](#project-structure)
+  - [Setup \& Installation](#setup--installation)
+    - [Prerequisites](#prerequisites)
+    - [Steps](#steps)
+    - [Seeded Credentials](#seeded-credentials)
+  - [Environment Variables](#environment-variables)
+  - [Database Schema](#database-schema)
+    - [User](#user)
+    - [FinancialRecord](#financialrecord)
+  - [API Documentation](#api-documentation)
+    - [Health Check](#health-check)
+    - [Authentication](#authentication)
+      - [Register](#register)
+      - [Login](#login)
+      - [Get Profile](#get-profile)
+    - [User Management](#user-management)
+    - [Financial Records](#financial-records)
+      - [Create Record](#create-record)
+      - [List Records with Filters](#list-records-with-filters)
+    - [Dashboard Analytics](#dashboard-analytics)
+      - [Summary Response](#summary-response)
+      - [Trends Response (monthly)](#trends-response-monthly)
+  - [Testing the API](#testing-the-api)
+    - [Quick start: Automated smoke test](#quick-start-automated-smoke-test)
+    - [Manual testing in Postman](#manual-testing-in-postman)
+    - [1. Create Postman environment variables](#1-create-postman-environment-variables)
+    - [2. Global request setup](#2-global-request-setup)
+    - [3. Authentication tests](#3-authentication-tests)
+    - [4. User Management tests (ADMIN only)](#4-user-management-tests-admin-only)
+    - [5. Financial Records tests](#5-financial-records-tests)
+    - [6. Dashboard tests](#6-dashboard-tests)
+    - [7. Access-control negative tests (must fail)](#7-access-control-negative-tests-must-fail)
+  - [Role-Based Access Control](#role-based-access-control)
+  - [Error Handling](#error-handling)
+  - [Design Decisions \& Tradeoffs](#design-decisions--tradeoffs)
 
 ---
 
@@ -358,234 +383,300 @@ GET /api/records?type=EXPENSE&category=Rent&startDate=2026-01-01&endDate=2026-12
 
 ## Testing the API
 
-You can test all endpoints using either **Postman** or **cURL**.
+### Quick start: Automated smoke test
 
-### Using Postman
-
-1. Import the API endpoints into Postman using the base URL `http://localhost:3000/api`
-2. For authenticated requests, first call the Login endpoint and copy the `token` from the response
-3. In subsequent requests, add an `Authorization` header with the value `Bearer <token>`
-4. Set `Content-Type: application/json` for POST/PATCH requests
-
-### Using cURL
-
-Below are ready-to-use cURL commands for every endpoint. Replace `<token>` with the JWT you receive from login.
-
-#### Health Check
+Run all 24 API tests in one command (no manual setup required):
 
 ```bash
-curl http://localhost:3000/api/health
+npm run test:api
 ```
 
-#### Authentication
+Output example:
+```
+Running API smoke tests against http://localhost:3000/api
+PASS - Health check
+PASS - Login admin
+PASS - Login analyst (seeded account, optional)
+...
+Summary: 24 passed, 0 failed
+```
 
-**Register a new user:**
+The smoke test automatically:
+- Logs in as admin and viewer
+- Registers a temporary user and promotes to ANALYST role
+- Tests all CRUD operations on users and records
+- Verifies dashboard analytics endpoints
+- Validates role-based access control (401/403 failures)
+- Cleans up temporary data
+
+**Environment variables (optional):**
+- `API_BASE_URL` (default: `http://localhost:3000/api`)
+- `ADMIN_EMAIL`, `ADMIN_PASSWORD` (default: `admin@finance.com` / `admin123`)
+- `VIEWER_EMAIL`, `VIEWER_PASSWORD` (default: `viewer@finance.com` / `viewer123`)
+
+Example:
 ```bash
-curl -X POST http://localhost:3000/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "newuser@example.com",
-    "password": "password123",
-    "name": "New User"
-  }'
+API_BASE_URL=https://api.example.com npm run test:api
 ```
 
-**Login (Admin):**
-```bash
-curl -X POST http://localhost:3000/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "admin@finance.com",
-    "password": "admin123"
-  }'
-```
+---
 
-**Login (Analyst):**
-```bash
-curl -X POST http://localhost:3000/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "analyst@finance.com",
-    "password": "analyst123"
-  }'
-```
+### Manual testing in Postman
 
-**Login (Viewer):**
-```bash
-curl -X POST http://localhost:3000/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "viewer@finance.com",
-    "password": "viewer123"
-  }'
-```
+Test all endpoints in Postman with this workflow. Every request below is directly usable.
 
-**Get current profile:**
-```bash
-curl http://localhost:3000/api/auth/me \
-  -H "Authorization: Bearer <token>"
-```
+### 1. Create Postman environment variables
 
-#### User Management (Admin Only)
+Create an environment (for example: Local Finance API) with:
 
-**List all users (paginated):**
-```bash
-curl "http://localhost:3000/api/users?page=1&limit=10" \
-  -H "Authorization: Bearer <token>"
-```
+- `baseUrl` = `http://localhost:3000/api`
+- `adminToken` = empty
+- `analystToken` = empty
+- `viewerToken` = empty
+- `userId` = empty
+- `recordId` = empty
 
-**Search users:**
-```bash
-curl "http://localhost:3000/api/users?search=analyst" \
-  -H "Authorization: Bearer <token>"
-```
+### 2. Global request setup
 
-**Get user by ID:**
-```bash
-curl http://localhost:3000/api/users/<user_id> \
-  -H "Authorization: Bearer <token>"
-```
+- For all `POST` and `PATCH` requests: Header `Content-Type: application/json`
+- For authenticated requests: Header `Authorization: Bearer {{tokenVariable}}`
+- Use tokens saved from login requests:
+  - `{{adminToken}}`
+  - `{{analystToken}}`
+  - `{{viewerToken}}`
 
-**Update user role/status:**
-```bash
-curl -X PATCH http://localhost:3000/api/users/<user_id> \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "role": "ANALYST",
-    "status": "ACTIVE"
-  }'
-```
+### 3. Authentication tests
 
-**Delete user:**
-```bash
-curl -X DELETE http://localhost:3000/api/users/<user_id> \
-  -H "Authorization: Bearer <token>"
-```
+1. **Health Check**
+   - Method: `GET`
+   - URL: `{{baseUrl}}/health`
+   - Auth: none
+   - Expected: `200`, `success: true`
 
-#### Financial Records
+2. **Register User**
+   - Method: `POST`
+   - URL: `{{baseUrl}}/auth/register`
+   - Body:
+   ```json
+   {
+     "email": "newuser@example.com",
+     "password": "password123",
+     "name": "New User"
+   }
+   ```
+   - Expected: `201`, response contains `data.token`
 
-**Create a record (Admin only):**
-```bash
-curl -X POST http://localhost:3000/api/records \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "amount": 5000,
-    "type": "INCOME",
-    "category": "Salary",
-    "description": "Monthly salary for April",
-    "date": "2026-04-01"
-  }'
-```
+3. **Login Admin**
+   - Method: `POST`
+   - URL: `{{baseUrl}}/auth/login`
+   - Body:
+   ```json
+   {
+     "email": "admin@finance.com",
+     "password": "admin123"
+   }
+   ```
+   - Expected: `200`, response contains `data.token`
+   - Tests tab script (save token):
+   ```javascript
+   const json = pm.response.json();
+   pm.environment.set("adminToken", json.data.token);
+   pm.test("Admin login success", () => pm.response.to.have.status(200));
+   ```
 
-**List all records with filters:**
-```bash
-# Basic listing
-curl "http://localhost:3000/api/records?page=1&limit=10" \
-  -H "Authorization: Bearer <token>"
+4. **Login Analyst**
+   - Method: `POST`
+   - URL: `{{baseUrl}}/auth/login`
+   - Body:
+   ```json
+   {
+     "email": "analyst@finance.com",
+     "password": "analyst123"
+   }
+   ```
+   - Tests tab script:
+   ```javascript
+   const json = pm.response.json();
+   pm.environment.set("analystToken", json.data.token);
+   ```
 
-# Filter by type
-curl "http://localhost:3000/api/records?type=EXPENSE" \
-  -H "Authorization: Bearer <token>"
+5. **Login Viewer**
+   - Method: `POST`
+   - URL: `{{baseUrl}}/auth/login`
+   - Body:
+   ```json
+   {
+     "email": "viewer@finance.com",
+     "password": "viewer123"
+   }
+   ```
+   - Tests tab script:
+   ```javascript
+   const json = pm.response.json();
+   pm.environment.set("viewerToken", json.data.token);
+   ```
 
-# Filter by date range
-curl "http://localhost:3000/api/records?startDate=2026-01-01&endDate=2026-12-31" \
-  -H "Authorization: Bearer <token>"
+6. **Get Current Profile**
+   - Method: `GET`
+   - URL: `{{baseUrl}}/auth/me`
+   - Header: `Authorization: Bearer {{adminToken}}`
+   - Expected: `200`
 
-# Filter by amount range
-curl "http://localhost:3000/api/records?minAmount=100&maxAmount=5000" \
-  -H "Authorization: Bearer <token>"
+### 4. User Management tests (ADMIN only)
 
-# Filter by category
-curl "http://localhost:3000/api/records?category=Rent" \
-  -H "Authorization: Bearer <token>"
+1. **List Users**
+   - Method: `GET`
+   - URL: `{{baseUrl}}/users?page=1&limit=10`
+   - Header: `Authorization: Bearer {{adminToken}}`
+   - Expected: `200`, array in `data`
 
-# Sort by amount descending
-curl "http://localhost:3000/api/records?sortBy=amount&order=desc" \
-  -H "Authorization: Bearer <token>"
+2. **Search Users**
+   - Method: `GET`
+   - URL: `{{baseUrl}}/users?search=analyst`
+   - Header: `Authorization: Bearer {{adminToken}}`
+   - Expected: `200`
 
-# Combined filters
-curl "http://localhost:3000/api/records?type=EXPENSE&category=Rent&startDate=2026-01-01&endDate=2026-12-31&minAmount=100&maxAmount=5000&page=1&limit=10&sortBy=amount&order=desc" \
-  -H "Authorization: Bearer <token>"
-```
+3. **Get User by ID**
+   - First, copy one user `id` from List Users response into `userId`
+   - Method: `GET`
+   - URL: `{{baseUrl}}/users/{{userId}}`
+   - Header: `Authorization: Bearer {{adminToken}}`
+   - Expected: `200`
 
-**Get a single record:**
-```bash
-curl http://localhost:3000/api/records/<record_id> \
-  -H "Authorization: Bearer <token>"
-```
+4. **Update User**
+   - Method: `PATCH`
+   - URL: `{{baseUrl}}/users/{{userId}}`
+   - Header: `Authorization: Bearer {{adminToken}}`
+   - Body:
+   ```json
+   {
+     "role": "ANALYST",
+     "status": "ACTIVE"
+   }
+   ```
+   - Expected: `200`
 
-**Update a record (Admin only):**
-```bash
-curl -X PATCH http://localhost:3000/api/records/<record_id> \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "amount": 5500,
-    "description": "Updated salary amount"
-  }'
-```
+5. **Delete User**
+   - Method: `DELETE`
+   - URL: `{{baseUrl}}/users/{{userId}}`
+   - Header: `Authorization: Bearer {{adminToken}}`
+   - Expected: `200`
+   - Note: Deleting your own logged-in admin account is rejected.
 
-**Delete a record — soft delete (Admin only):**
-```bash
-curl -X DELETE http://localhost:3000/api/records/<record_id> \
-  -H "Authorization: Bearer <token>"
-```
+### 5. Financial Records tests
 
-#### Dashboard Analytics
+1. **Create Record (ADMIN)**
+   - Method: `POST`
+   - URL: `{{baseUrl}}/records`
+   - Header: `Authorization: Bearer {{adminToken}}`
+   - Body:
+   ```json
+   {
+     "amount": 5000,
+     "type": "INCOME",
+     "category": "Salary",
+     "description": "Monthly salary for April",
+     "date": "2026-04-01"
+   }
+   ```
+   - Expected: `201`
+   - Tests tab script (save record id):
+   ```javascript
+   const json = pm.response.json();
+   pm.environment.set("recordId", json.data.id);
+   ```
 
-**Financial summary (Analyst/Admin):**
-```bash
-curl http://localhost:3000/api/dashboard/summary \
-  -H "Authorization: Bearer <token>"
-```
+2. **List Records (All authenticated roles)**
+   - Method: `GET`
+   - URL examples:
+     - `{{baseUrl}}/records?page=1&limit=10`
+     - `{{baseUrl}}/records?type=EXPENSE`
+     - `{{baseUrl}}/records?category=Rent`
+     - `{{baseUrl}}/records?startDate=2026-01-01&endDate=2026-12-31`
+     - `{{baseUrl}}/records?minAmount=100&maxAmount=5000`
+     - `{{baseUrl}}/records?sortBy=amount&order=desc`
+   - Header: `Authorization: Bearer {{viewerToken}}`
+   - Expected: `200`
 
-**Category-wise totals (Analyst/Admin):**
-```bash
-curl http://localhost:3000/api/dashboard/category-totals \
-  -H "Authorization: Bearer <token>"
-```
+3. **Get Record by ID**
+   - Method: `GET`
+   - URL: `{{baseUrl}}/records/{{recordId}}`
+   - Header: `Authorization: Bearer {{viewerToken}}`
+   - Expected: `200`
 
-**Monthly trends — last 12 months (Analyst/Admin):**
-```bash
-curl http://localhost:3000/api/dashboard/trends \
-  -H "Authorization: Bearer <token>"
-```
+4. **Update Record (ADMIN)**
+   - Method: `PATCH`
+   - URL: `{{baseUrl}}/records/{{recordId}}`
+   - Header: `Authorization: Bearer {{adminToken}}`
+   - Body:
+   ```json
+   {
+     "amount": 5500,
+     "description": "Updated salary amount"
+   }
+   ```
+   - Expected: `200`
 
-**Recent activity (all authenticated users):**
-```bash
-curl "http://localhost:3000/api/dashboard/recent?limit=5" \
-  -H "Authorization: Bearer <token>"
-```
+5. **Delete Record (ADMIN, soft delete)**
+   - Method: `DELETE`
+   - URL: `{{baseUrl}}/records/{{recordId}}`
+   - Header: `Authorization: Bearer {{adminToken}}`
+   - Expected: `200`
 
-#### Testing Access Control
+### 6. Dashboard tests
 
-You can verify role restrictions by logging in with different roles and attempting restricted operations:
+1. **Summary (ANALYST/ADMIN)**
+   - Method: `GET`
+   - URL: `{{baseUrl}}/dashboard/summary`
+   - Header: `Authorization: Bearer {{analystToken}}`
+   - Expected: `200`
 
-```bash
-# 1. Login as Viewer
-curl -s -X POST http://localhost:3000/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email": "viewer@finance.com", "password": "viewer123"}'
-# Copy the token from the response
+2. **Category Totals (ANALYST/ADMIN)**
+   - Method: `GET`
+   - URL: `{{baseUrl}}/dashboard/category-totals`
+   - Header: `Authorization: Bearer {{analystToken}}`
+   - Expected: `200`
 
-# 2. Try to create a record as Viewer (should return 403 Forbidden)
-curl -X POST http://localhost:3000/api/records \
-  -H "Authorization: Bearer <viewer_token>" \
-  -H "Content-Type: application/json" \
-  -d '{"amount": 100, "type": "INCOME", "category": "Test", "date": "2026-04-01"}'
+3. **Trends (ANALYST/ADMIN)**
+   - Method: `GET`
+   - URL: `{{baseUrl}}/dashboard/trends`
+   - Header: `Authorization: Bearer {{analystToken}}`
+   - Expected: `200`
 
-# 3. Try to access dashboard summary as Viewer (should return 403 Forbidden)
-curl http://localhost:3000/api/dashboard/summary \
-  -H "Authorization: Bearer <viewer_token>"
+4. **Recent Activity (all authenticated roles)**
+   - Method: `GET`
+   - URL: `{{baseUrl}}/dashboard/recent?limit=5`
+   - Header: `Authorization: Bearer {{viewerToken}}`
+   - Expected: `200`
 
-# 4. Viewer CAN view records (should return 200 OK)
-curl http://localhost:3000/api/records \
-  -H "Authorization: Bearer <viewer_token>"
-```
+### 7. Access-control negative tests (must fail)
 
-> **Tip (Windows CMD):** If you're using Windows Command Prompt instead of Git Bash, replace `\` line continuations with `^` and use double quotes for the `-d` body.
+1. **Viewer cannot create record**
+   - Method: `POST`
+   - URL: `{{baseUrl}}/records`
+   - Header: `Authorization: Bearer {{viewerToken}}`
+   - Body:
+   ```json
+   {
+     "amount": 100,
+     "type": "INCOME",
+     "category": "Test",
+     "date": "2026-04-01"
+   }
+   ```
+   - Expected: `403`
+
+2. **Viewer cannot access summary**
+   - Method: `GET`
+   - URL: `{{baseUrl}}/dashboard/summary`
+   - Header: `Authorization: Bearer {{viewerToken}}`
+   - Expected: `403`
+
+3. **Missing token on protected endpoint**
+   - Method: `GET`
+   - URL: `{{baseUrl}}/records`
+   - No Authorization header
+   - Expected: `401`
 
 ---
 
